@@ -7,6 +7,7 @@
 #
 # Supported distributions:
 #   - Ubuntu 22.04, 24.04, 26.04
+#   - Fedora 44
 #   - RHEL/AlmaLinux 8, 9, 10
 #
 # Usage:
@@ -302,27 +303,42 @@ case "$DISTRO" in
     fi
     ;;
 
-"rhel"|"almalinux")
-    MAJOR="${RELEASE%%.*}"
+"rhel"|"almalinux"|"fedora")
+    if [[ "$DISTRO" == "fedora" ]]; then
+        if [[ "$RELEASE" != "44" ]]; then
+            die "Fedora $RELEASE is not supported. Supported version: 44"
+        fi
 
-    # Validate supported release
-    if [[ "$MAJOR" != "8" && "$MAJOR" != "9" && "$MAJOR" != "10" ]]; then
-        die "$DISTRO $RELEASE is not supported. Supported major versions: 8, 9, 10"
+        MAJOR="10"
+        MS_GPG_KEY="https://packages.microsoft.com/keys/microsoft-2025.asc"
+        INSTALL_EPEL=false
+    else
+        MAJOR="${RELEASE%%.*}"
+
+        # Validate supported release
+        if [[ "$MAJOR" != "8" && "$MAJOR" != "9" && "$MAJOR" != "10" ]]; then
+            die "$DISTRO $RELEASE is not supported. Supported major versions: 8, 9, 10"
+        fi
+
+        # RHEL 10+ repos are signed with a newer Microsoft GPG key
+        if [[ "$MAJOR" -ge 10 ]]; then
+            MS_GPG_KEY="https://packages.microsoft.com/keys/microsoft-2025.asc"
+            INSTALL_EPEL=true
+        else
+            MS_GPG_KEY="https://packages.microsoft.com/keys/microsoft.asc"
+            INSTALL_EPEL=false
+        fi
     fi
 
     log "Installing prerequisites..."
 
-    # RHEL 10+ repos are signed with a newer Microsoft GPG key
-    if [[ "$MAJOR" -ge 10 ]]; then
-        MS_GPG_KEY="https://packages.microsoft.com/keys/microsoft-2025.asc"
+    # Fedora 44 is treated as RHEL 10-compatible for Microsoft package enrollment.
+    sudo rpm --import "$MS_GPG_KEY"
+
+    if $INSTALL_EPEL; then
         # RHEL 10 requires EPEL for webkitgtk6.0 dependency
         rpm -q epel-release || sudo dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
-    else
-        MS_GPG_KEY="https://packages.microsoft.com/keys/microsoft.asc"
     fi
-
-    # Import Microsoft GPG key
-    sudo rpm --import "$MS_GPG_KEY"
 
     # Clean up stale repo files from previous installer versions that used
     # 'dnf config-manager --add-repo', which creates incomplete files without gpgcheck.
@@ -382,8 +398,7 @@ EOF
     ;;
 
 *)
-    die "$DISTRO is not a supported distribution. Supported: Ubuntu 22.04/24.04/26.04, RHEL/AlmaLinux 8/9/10"
-    ;;
+    die "$DISTRO is not a supported distribution. Supported: Ubuntu 22.04/24.04/26.04, Fedora 44, RHEL/AlmaLinux 8/9/10"
 esac
 
 # --- Done ---
